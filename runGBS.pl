@@ -151,26 +151,26 @@ if(! exists $check_point{"SABRE"}){
 		$barcodeFile = $FASTQ."/".$lane.".barcodes";
 		if($SE==1){
 			$fastqFile = $FASTQ."/".$lane.".fq.gz";
+			if(! -f $fastqFile && $fastqFile ne ""){
+				print "WARNING: $fastqFile file doesn't exist. Skipping\n";
+			}
+			else{
+				mkdir("$FASTQ/$lane");
+				$sabreCMD="\"$sabre se -f $fastqFile -b $barcodeFile -u $FASTQ/$lane/unknown.fq \$\> $FASTQ/$lane/sabre.log\"";
+				push(@sabreCMDs, $sabreCMD);
+			}
 		}
 		if($PE==1){
 			$fastqFile1 = $FASTQ."/".$lane."_1.fq.gz";
 			$fastqFile2 = $FASTQ."/".$lane."_2.fq.gz";
-		}
-		if(! -f $fastqFile && $fastqFile ne ""){
-			print "WARNING: $fastqFile file doesn't exist. Skipping\n";
-		}
-		elsif((! -f $fastqFile1) || (!-f $fastqFile2)){
-			print "WARNING: $fastqFile1 or $fastqFile1 file doesn't exist. Skipping\n";
-		}	
-		else{
-			mkdir("$FASTQ/$lane");
-			if($SE==1){
-				$sabreCMD="\"$sabre se -f $fastqFile -b $barcodeFile -u $FASTQ/$lane/unknown.fq \$\> $FASTQ/$lane/sabre.log\"";
+			if((! -f $fastqFile1) || (!-f $fastqFile2)){
+				print "WARNING: $fastqFile1 or $fastqFile1 file doesn't exist. Skipping\n";
 			}
-			if($PE==1){
+			else{
+				mkdir("$FASTQ/$lane");
 				$sabreCMD="\"$sabre pe -f $fastqFile1 -r $fastqFile2 -b $barcodeFile -u $FASTQ/$lane/unknown_1.fq -w $FASTQ/$lane/unknown_2.fq \$\> $FASTQ/$lane/sabre.log\"";
+				push(@sabreCMDs, $sabreCMD);
 			}
-			push(@sabreCMDs, $sabreCMD);
 		}
 	}
 	$sabreCMD="parallel -j $NPCORE \:\:\: ".join(" ", @sabreCMDs);
