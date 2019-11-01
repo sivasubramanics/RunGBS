@@ -16,7 +16,7 @@ $usage="
 	--pe|P	- Paired-end data
 	--reference|-r	- Reference sequence file. (.fasta or .fa)
 	--keyfile|-k	- Path for Keyfile.
-	--fastq|-i	- Path for fastq directory (fastq files should named as FLOWCELLIF_LANE.fq.gz)
+	--fastq|-i	- Path for fastq directory (fastq files should named as FLOWCELLIF_LANE.fastq.gz)
 
 	Fastq processing:
 	--adapter|-a	- Adapter sequence to use for cutadapt tool. (default: GAGATCGGAAGAGCGGG)
@@ -27,29 +27,32 @@ $usage="
 	--npcore|-n	- Number of threads/cores to be used for parallel (default: 2)
 	
 	Tools:
-	--sabre	- Paht for sabre executable (default: \$PATH/sabre)
-	--cutadapt	- Paht for cutadapt executable (default: \$PATH/cutadapt)
-	--bowtie2	- Paht for bowtie2 executable (default: \$PATH/bowtie2)
-	--samtools	- Paht for samtools executable (default: \$PATH/samtools)
-	--bcftools	- Paht for bcftools executable (default: \$PATH/bcftools)
+	--sabre	- Path for sabre executable (default: \$PATH/sabre)
+	--cutadapt	- Path for cutadapt executable (default: \$PATH/cutadapt)
+	--bowtie2	- Path for bowtie2 executable (default: \$PATH/bowtie2)
+	--samtools	- Path for samtools executable (samtools-1.6 or higher) (default: \$PATH/samtools)
+	--bcftools	- Path for bcftools executable (bcftools-1.6 or higher) (default: \$PATH/bcftools)
+	--bamtools	- Path for bcftools executable (default: \$PATH/bamtools)
 ";
 
 
 $help=0;
 $NPCORE=2;
 $NTH=2;
-$sabre="/home/sivasubramani/Programs/sabre-master/sabre";
+$sabre="sabre";
 $cutadapt="cutadapt";
 $bowtie2="bowtie2";
 $samtools="samtools";
 $bcftools="bcftools";
+$bamtools="bamtools";
 $NTH=2;
 $MINLN=50;
 @lanes=();
 $ADAPTER="GAGATCGGAAGAGCGGG";
 $SE=0;
 $PE=0;
-
+%samples = ();
+$flag = 0;
 
 
 GetOptions(
@@ -83,12 +86,12 @@ if($REFERENCE=~/(.*).fasta$/ || $REFERENCE=~/(.*).fa$/){
 	$REF_BASE=$1;
 }
 
-$ALLCORE=$NPCORE*$NTH;
+chomp($ALLCORE=`cat /proc/cpuinfo | grep processor | tail -1 | awk \'{print \$NF}\'`);
 $KeyFileSorted=$KeyFile.".sorted";
 $DATADIR=$FASTQ."/Analysis";
 
 if(! -d $DATADIR){
-	print "Creadting Analyis  directory... ($DATADIR)\n";
+	print "Creating Analyis  directory... ($DATADIR)\n";
 	$exit_status = mkdir($DATADIR);
 	checkLog($exit_status,"makeDataDirectory");
 }
@@ -102,20 +105,13 @@ if(-f "$DATADIR/check_point.txt"){
 	close CHECK;
 }
 
-print "Creadting check point file... ($DATADIR/check_point.txt)\n";
+print "Creating check point file... ($DATADIR/check_point.txt)\n";
 open(CHECK, ">>$DATADIR/check_point.txt");
 
 $sortCMD = "sort -k1,1 -k2,2 $KeyFile > $KeyFileSorted";
 print "Sorting Keyfile for FlowCell and Lane... ($KeyFileSorted)\n";
 $exit_status = system($sortCMD);
 checkLog($exit_status,"sortKeyFile");
-
-
-if($DATADIR ne "" && $DATADIR ne "/" && $DATADIR ne "~"){
-	$rm="rm -rf $DATADIR";
-	# system($rm);
-}
-
 
 
 open(KEY, $KeyFileSorted);
@@ -130,16 +126,16 @@ while(<KEY>){
 	if($pout ne $out){
 		push(@lanes, $out);
 		$out_file=$FASTQ."/".$out.".barcodes";
-		print "Creadting Barcode file fr sabre... ($out_file)\n";
+		print "Creating Barcode file fr sabre... ($out_file)\n";
 		open($OF, ">$out_file");
 	}
 	$fq{$arr[3]}{$arr[0]}{$arr[1]}=1;
 	$samples{$arr[3]}++;
 	if($SE==1){
-		print $OF $arr[2],"\t",$FASTQ,"/",$arr[0],"_",$arr[1],"/",$arr[3],".fq\n";
+		print $OF $arr[2],"\t",$FASTQ,"/",$arr[0],"_",$arr[1],"/",$arr[3],"_n",$samples{$arr[3]},".fq\n";
 	}
 	if($PE==1){
-		print $OF $arr[2],"\t",$FASTQ,"/",$arr[0],"_",$arr[1],"/",$arr[3],"_1.fq","\t",$FASTQ,"/",$arr[0],"_",$arr[1],"/",$arr[3],"_2.fq\n";
+		print $OF $arr[2],"\t",$FASTQ,"/",$arr[0],"_",$arr[1],"/",$arr[3],"_n",$samples{$arr[3]},"_1.fq","\t",$FASTQ,"/",$arr[0],"_",$arr[1],"/",$arr[3],"_n",$samples{$arr[3]},"_2.fq\n";
 	}
 	$pout = $out;
 }
@@ -150,7 +146,7 @@ if(! exists $check_point{"SABRE"}){
 	foreach $lane(@lanes){
 		$barcodeFile = $FASTQ."/".$lane.".barcodes";
 		if($SE==1){
-			$fastqFile = $FASTQ."/".$lane.".fq.gz";
+			$fastqFile = $FASTQ."/".$lane."_fastq.gz";
 			if(! -f $fastqFile && $fastqFile ne ""){
 				print "WARNING: $fastqFile file doesn't exist. Skipping\n";
 			}
@@ -161,8 +157,8 @@ if(! exists $check_point{"SABRE"}){
 			}
 		}
 		if($PE==1){
-			$fastqFile1 = $FASTQ."/".$lane."_1.fq.gz";
-			$fastqFile2 = $FASTQ."/".$lane."_2.fq.gz";
+			$fastqFile1 = $FASTQ."/".$lane."_1.fastq.gz";
+			$fastqFile2 = $FASTQ."/".$lane."_2.fastq.gz";
 			if((! -f $fastqFile1) || (!-f $fastqFile2)){
 				print "WARNING: $fastqFile1 or $fastqFile1 file doesn't exist. Skipping\n";
 			}
@@ -174,6 +170,7 @@ if(! exists $check_point{"SABRE"}){
 		}
 	}
 	$sabreCMD="parallel -j $NPCORE \:\:\: ".join(" ", @sabreCMDs);
+	print $sabreCMDs,"\n";
 	print "Processing Sabre...\n";
 	$exit_status = system($sabreCMD);
 	checkLog($exit_status,"sabre");
@@ -186,40 +183,75 @@ if(! exists $check_point{"CONCATENATE"}){
 		if($SE==1){
 			$file="";
 			for $lane(@lanes){
-				$fq = $FASTQ."/".$lane."/".$ID.".fq";
-				if(-f $fq){
-					$file.= " ".$fq;
+				for ($i=1;$i<=$samples{$ID};$i++){
+					$fq = $FASTQ."/".$lane."/".$ID."_n".$i.".fq";
+					$fqgz = $FASTQ."/".$lane."/".$ID."_n".$i.".fq.gz";
+					if(-f $fq){
+						$file.= " ".$fq;
+					}
+					elsif(-f $fqgz){
+						$ungzipCMD = "pigz -p $ALLCORE -d $fqgz";
+						$exit_status = system($ungzipCMD);
+						checkLog($exit_status,"decompressing");
+						$file.= " ".$fq;	
+					}
 				}
 			}
-			$fqfile=$DATADIR."/".$ID.".fq";
+			$fqfile=$DATADIR."/".$ID.".fq.gz";
 			if($file ne ""){
-				$catCMD = "cat $file >> $fqfile";
+				$catCMD = "cat $file | pigz --fast -p $ALLCORE >> $fqfile";
 				$exit_status = system($catCMD);
 				checkLog($exit_status,"concatenating");
+				$gzipCMD = "pigz --fast -p $ALLCORE $file";
+				$exit_status = system($gzipCMD);
+				checkLog($exit_status,"compressing");
 			}
 		}
 		if($PE==1){
 			$file1="";
 			$file2="";
 			for $lane(@lanes){
-				$fq1 = $FASTQ."/".$lane."/".$ID."_1.fq";
-				$fq2 = $FASTQ."/".$lane."/".$ID."_2.fq";
-				if(-f $fq1){
-					$file1.= " ".$fq1;
-				}
-				if(-f $fq2){
-					$file2.= " ".$fq2;
+				for ($i=1;$i<=$samples{$ID};$i++){
+					$fq1 = $FASTQ."/".$lane."/".$ID."_n".$i."_1.fq";
+					$fq2 = $FASTQ."/".$lane."/".$ID."_n".$i."_2.fq";
+					$fq1gz = $FASTQ."/".$lane."/".$ID."_n".$i."_1.fq.gz";
+					$fq2gz = $FASTQ."/".$lane."/".$ID."_n".$i."_2.fq.gz";
+					if(-f $fq1){
+						$file1.= " ".$fq1;
+					}
+					elsif(-f $fq1gz){
+						$ungzipCMD = "pigz -p $ALLCORE -d $fq1gz";
+						$exit_status = system($ungzipCMD);
+						checkLog($exit_status,"decompressing");
+						$file.= " ".$fq1;
+					}
+					if(-f $fq2){
+						$file2.= " ".$fq2;
+					}
+					elsif(-f $fq2gz){
+						$ungzipCMD = "pigz -p $ALLCORE -d $fq2gz";
+						$exit_status = system($ungzipCMD);
+						checkLog($exit_status,"decompressing");
+						$file.= " ".$fq2;
+					}
 				}
 			}
-			$fqfile1=$DATADIR."/".$ID."_1.fq";
-			$fqfile2=$DATADIR."/".$ID."_2.fq";
+			$fqfile1=$DATADIR."/".$ID."_1.fq.gz";
+			$fqfile2=$DATADIR."/".$ID."_2.fq.gz";
 			if($file1 ne "" && $file2 ne ""){
-				$catCMD1 = "cat $file1 >> $fqfile1";
-				$catCMD2 = "cat $file2 >> $fqfile2";
+				$catCMD1 = "cat $file1 | pigz --fast -p $ALLCORE >> $fqfile1";
 				$exit_status = system($catCMD1);
 				checkLog($exit_status,"concatenating");
+				$gzipCMD = "pigz --fast -p $ALLCORE $file1";
+				$exit_status = system($gzipCMD);
+				checkLog($exit_status,"compressing");
+
+				$catCMD2 = "cat $file2 | pigz --fast -p $ALLCORE >> $fqfile2";
 				$exit_status = system($catCMD2);
 				checkLog($exit_status,"concatenating");
+				$gzipCMD = "pigz --fast -p $ALLCORE $file2";
+				$exit_status = system($gzipCMD);
+				checkLog($exit_status,"compressing");
 			}	
 		}
 	}
@@ -228,13 +260,14 @@ if(! exists $check_point{"CONCATENATE"}){
 
 if(! exists $check_point{"CUTADAPT"}){
 	if($SE==1){
-		$cutadapt="parallel -j $NPCORE cutadapt --quiet -a $ADAPTER -m $MINLN -o {}.fastq {}.fq \'2\>\' {}.cutadapt.log \:\:\: \$(ls -1 $DATADIR/*.fq | sed 's/.fq//')";
+		$cutadaptCMD="parallel -j $NPCORE $cutadapt --quiet -a $ADAPTER -m $MINLN -o {}.fastq.gz {}.fq.gz \'2\>\' {}.cutadapt.log \:\:\: \$(ls -1 $DATADIR/*.fq.gz | sed 's/.fq.gz//')";
 	}
 	if($PE==1){
-		$cutadapt="parallel -j $NPCORE cutadapt --quiet -a $ADAPTER -A $ADAPTER -m $MINLN -o {}_1.fastq -p {}_2.fastq {}_1.fq {}_2.fq \'2\>\' {}.cutadapt.log \:\:\: \$(ls -1 $DATADIR/*_1.fq | sed 's/_1.fq//')";
+		$cutadaptCMD="parallel -j $NPCORE $cutadapt --quiet -a $ADAPTER -A $ADAPTER -m $MINLN -o {}_1.fastq.gz -p {}_2.fastq.gz {}_1.fq.gz {}_2.fq.gz \'2\>\' {}.cutadapt.log \:\:\: \$(ls -1 $DATADIR/*_1.fq.gz | sed 's/_1.fq.gz//')";
 	}
 	print "Processing Cutadapt...\n";
-	$exit_status = system($cutadapt);
+	print $cutadapt,"\n";
+	$exit_status = system($cutadaptCMD);
 	checkLog($exit_status,"cutadapt");
 	print CHECK "CUTADAPT\n";
 }
@@ -255,19 +288,73 @@ if(! -f $REFERENCE.".fai"){
 	checkLog($exit_status,"fastaIndexing");
 }
 
+open(REFIDX, $REFERENCE.".fai");
+while (<REFIDX>) {
+	chomp();
+	@arr = split("\t", $_);
+	$chrFileName = $REF_BASE."_".$arr[0].".fa";
+	push(@refereceChrs, $arr[0]);
+	if(! -f $chrFileName){
+		$flag = 1;
+	}
+}
+close REFIDX;
+
+if($flag == 1){
+	open(REF, $REFERENCE);
+	while (<REF>) {
+		chomp();
+		if($_=~/^>(\S+)/){
+			$chrName = $1;
+			$chrFileName = $REF_BASE."_".$chrName.".fa";
+			close CHR;
+			open(CHR, ">$chrFileName");
+			print CHR $_,"\n";
+		}
+		else{
+			print CHR $_,"\n";	
+		}
+	}
+	close CHR;
+	close REF;
+}
+
 if(! exists $check_point{"BOWTIE2"}){
+	open(BOWTIESHELL, ">$DATADIR/runBowtie2.sh");
 	if($SE==1){
-		$bowtie2CMD="parallel -j $NPCORE $bowtie2 --phred64 --end-to-end -p $NTH --rg-id {/.} --rg \"PL:ILLUMINA\" --rg \"SM:{/.}\" -x $REF_BASE -U {}.fastq -S {}.sam \'2\>\' {}.log \:\:\: \$(ls -1 $DATADIR/*.fastq | sed 's/.fastq//')";
+
+		foreach $sample(keys %samples){
+			$tempFq = $DATADIR."/".$sample.".fastq.gz";
+			if(-f $tempFq){
+				print BOWTIESHELL "$bowtie2 --end-to-end -N 1 -p $NTH --rg-id $sample --rg PL:ILLUMINA --rg SM:$sample -x $REF_BASE -U $DATADIR/$sample.fastq.gz 2> $DATADIR/$sample.log | $samtools view -T $REFERENCE -hu - | $samtools sort --reference $REFERENCE -o $DATADIR/$sample.sort.bam 2> $DATADIR/$sample.log\n";	
+			}
+			
+		}
+
+		# $bowtie2CMD="parallel -j $NPCORE $bowtie2 --end-to-end -p $NTH --rg-id {/.} --rg \"PL:ILLUMINA\" --rg \"SM:{/.}\" -x $REF_BASE -U {}.fastq -S {}.sam \'2\>\' {}.log \:\:\: \$(ls -1 $DATADIR/*.fastq | sed 's/.fastq//')";
 	}
 	if($PE==1){
-		$bowtie2CMD="parallel -j $NPCORE $bowtie2 --end-to-end -X 500 -p $NTH --rg-id {/.} --rg \"PL:ILLUMINA\" --rg \"SM:{/.}\" -x $REF_BASE -1 {}_1.fastq -2 {}_2.fastq -S {}.sam \'2\>\' {}.log \:\:\: \$(ls -1 $DATADIR/*_1.fastq | sed 's/_1.fastq//')";
+		# $bowtie2CMD="parallel -j $NPCORE $bowtie2 --end-to-end -X 500 -p $NTH --rg-id {/.} --rg \"PL:ILLUMINA\" --rg \"SM:{/.}\" -x $REF_BASE -1 {}_1.fastq -2 {}_2.fastq -S {}.sam \'2\>\' {}.log \:\:\: \$(ls -1 $DATADIR/*_1.fastq | sed 's/_1.fastq//')";
+		foreach $sample(keys %samples){
+			$tempFq1 = $DATADIR."/".$sample."_1.fastq.gz";
+			$tempFq2 = $DATADIR."/".$sample."_2.fastq.gz";
+			if(-f $tempFq1 && -f $tempFq2){
+				print BOWTIESHELL "$bowtie2 --end-to-end -N 1 -p $NTH --rg-id $sample --rg PL:ILLUMINA --rg SM:$sample -x $REF_BASE -1 $DATADIR/$sample_1.fastq.gz -2 $DATADIR/$sample_2.fastq.gz 2> $DATADIR/$sample.log | $samtools view -T $REFERENCE -hu - | $samtools sort --reference $REFERENCE -o $DATADIR/$sample.sort.bam 2> $DATADIR/$sample.log";
+			}
+		}
+
+		# $bowtie2CMD="parallel -j $NPCORE $bowtie2 --end-to-end -N 1 -p $NTH --rg-id {/.} --rg \"PL:ILLUMINA\" --rg \"SM:{/.}\" -x $REF_BASE -1 {}_1.fastq -2 {}_2.fastq | $samtools view -T $REFERENCE -hu - | samtools sort --reference $REFERENCE -o {}.sort.bam \'2\>\' {}.log \:\:\: \$(ls -1 $DATADIR/*.fastq | sed 's/.fastq//')";
 	}
+	close BOWTIESHELL;
+	$bowtie2CMD = "parallel -j $NPCORE < $DATADIR/runBowtie2.sh";
 	print "Bowtie2 mapping is in progress...\n";
+	print "$bowtie2CMD\n";
 	$exit_status = system($bowtie2CMD);
 	checkLog($exit_status, "bowtie2");
 	print CHECK "BOWTIE2\n";
 }
 
+=head
 if(! exists $check_point{"SAM2BAM"}){
 	if($SE==1){
 		$sam2bamCMD="parallel -j $NPCORE $samtools view -T $REFERENCE -S {}.sam -b -o {}.bam \:\:\: \$(ls -1 $DATADIR/*.fastq | sed 's/.fastq//')";
@@ -293,13 +380,14 @@ if(! exists $check_point{"SORTBAM"}){
 	checkLog($exit_status, "sortBAM");
 	print CHECK "SORTBAM\n";
 }
+=cut
 
 if(! exists $check_point{"SORTBAMIDX"}){
 	if($SE==1){
-		$sortbamidxCMD="parallel -j $NPCORE $samtools index {}.sort.bam \:\:\: \$(ls -1 $DATADIR/*.fastq | sed 's/.fastq//')";
+		$sortbamidxCMD="parallel -j $ALLCORE $samtools index {}.sort.bam \:\:\: \$(ls -1 $DATADIR/*.fastq.gz | sed 's/.fastq.gz//')";
 	}
 	if($PE==1){
-		$sortbamidxCMD="parallel -j $NPCORE $samtools index {}.sort.bam \:\:\: \$(ls -1 $DATADIR/*_1.fastq | sed 's/_1.fastq//')";
+		$sortbamidxCMD="parallel -j $ALLCORE $samtools index {}.sort.bam \:\:\: \$(ls -1 $DATADIR/*_1.fastq.gz | sed 's/_1.fastq.gz//')";
 	}
 	print "BAM indexing is in progress...\n";
 	$exit_status =  system($sortbamidxCMD);
@@ -307,11 +395,51 @@ if(! exists $check_point{"SORTBAMIDX"}){
 	print CHECK "SORTBAMIDX\n";
 }
 
+if(! exists $check_point{"SPLITBAM"}){
+	open(BAMSPLIT, ">$DATADIR/runSplitBam.sh");
+	foreach $sample(keys %samples){
+		$tempBam = $DATADIR."/".$sample.".sort.bam";
+		if(-f $tempBam){
+			print BAMSPLIT "$bamtools split -refPrefix \'\' -in $tempBam -reference\n";
+		}
+	}
+	close BAMSPLIT;
+	$splitBamCMD = "parallel -j $ALLCORE < $DATADIR/runSplitBam.sh";
+	print "BAM splitting is in progress...\n";
+	print "$splitBamCMD\n";
+	$exit_status =  system($splitBamCMD);
+	checkLog($exit_status, "splitBAM");
+	print CHECK "SPLITBAM\n";
+}
+
+if(! exists $check_point{"SPLITBAMIDX"}){
+	open(BAMSPLITIDX, ">$DATADIR/runSplitBamIndex.sh");
+	foreach $sample(keys %samples){
+		$tempBam = $DATADIR."/".$sample.".sort.bam";
+		if(-f $tempBam){
+			print BAMSPLITIDX "$samtools index $tempBam\n";
+		}
+	}
+	close BAMSPLITIDX;
+
+	$splitBamIndexCMD = "parallel -j $ALLCORE < $DATADIR/runSplitBam.sh";
+	print "BAM indexing is in progress...\n";
+	print "$splitBamIndexCMD\n";
+	$exit_status =  system($splitBamIndexCMD);
+	checkLog($exit_status, "splitBAMIndex");
+	print CHECK "SPLITBAMIDX\n";
+}
+
 if(! exists $check_point{"SORTBAMLIST"}){
-	$bamList="ls -c1 $DATADIR/*.sort.bam > $DATADIR/sortBamList";
-	print "Creating Bam list file ($DATADIR/sortBamList)...\n";
-	$exit_status =  system($bamList);
-	checkLog($exit_status, "makeSortBamList");
+	foreach $chr(@refereceChrs){
+		$bamList="ls -c1 $DATADIR/*.sort.$chr.bam > $DATADIR/sortBamList_$chr";	
+		$exit_status =  system($bamList);
+		checkLog($exit_status, "makeSortBamList_$chr");
+	}
+	# $bamList="ls -c1 $DATADIR/*.sort.bam > $DATADIR/sortBamList";
+	# print "Creating Bam list file ($DATADIR/sortBamList)...\n";
+	# $exit_status =  system($bamList);
+	# checkLog($exit_status, "makeSortBamList");
 	print CHECK "SORTBAMLIST\n";
 }
 
@@ -336,11 +464,41 @@ if(! exists $check_point{"SORTBAMLIST"}){
 # checkLog($exit_status, "VariantCallingRMduptBAM");
 
 if(! exists $check_point{"VARCALLING"}){
-	$varcallCMD="$bcftools mpileup -a DP,AD -O u --threads $ALLCORE -f $REFERENCE --bam-list $DATADIR/sortBamList | bcftools call --threads $NTH -mv -O z -o $DATADIR/var.raw.sort.vcf.gz";
-	print "Variant calling is in progress ($DATADIR/var.raw.sort.vcf.gz)...\n";
+	open(VARCALL, ">$DATADIR/runVarCalling.sh");
+	foreach $chr(@refereceChrs){
+		$chrFileName = $REF_BASE."_".$chr.".fa";
+		$varcallCMD="$bcftools mpileup -a DP,AD -O u --threads $NTH -f $chrFileName --bam-list $DATADIR/sortBamList_$chr | $bcftools call --threads $NTH -mv -O z -o $DATADIR/var.$chr.raw.sort.vcf.gz";
+		print VARCALL $varcallCMD,"\n";
+	}
+	close VARCALL;
+	$varcallCMD = "parallel -j $NPCORE < $DATADIR/runVarCalling.sh";
+	print "Variant calling is in progress...\n";
+	print "$varcallCMD\n";
 	$exit_status =  system($varcallCMD);
 	checkLog($exit_status, "VariantCallingSortBAM");
 	print CHECK "VARCALLING\n";
+
+	# $varcallCMD="$bcftools mpileup -a DP,AD -O u --threads $ALLCORE -f $REFERENCE --bam-list $DATADIR/sortBamList | $bcftools call --threads $NTH -mv -O z -o $DATADIR/var.raw.sort.vcf.gz";
+	# print "Variant calling is in progress ($DATADIR/var.raw.sort.vcf.gz)...\n";
+	# print $varcallCMD,"\n";
+	# $exit_status =  system($varcallCMD);
+	# checkLog($exit_status, "VariantCallingSortBAM");
+	# print CHECK "VARCALLING\n";
+}
+
+if(! exists $check_point{"VARFILTERING"}){
+	open(VARFILTER, ">$DATADIR/runVarFiltering.sh");
+	foreach $chr(@refereceChrs){
+		$varFilterCMD="$bcftools view --types snps -O z -o $DATADIR/var.$chr.raw.sort.snp.vcf.gz $DATADIR/var.$chr.raw.sort.vcf.gz";
+		
+		print VARFILTER $varFilterCMD,"\n";
+	}
+	close VARFILTER;
+	$varcallCMD = "parallel -j $NPCORE < $DATADIR/runVarFiltering.sh";
+	print "Variant Filtering is in progress...\n";
+	$exit_status =  system($varFilterCMD);
+	checkLog($exit_status, "VariantFilteringForSNPs");
+	print CHECK "VARFILTERING\n";
 }
 
 close CHECK;
